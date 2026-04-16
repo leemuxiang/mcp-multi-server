@@ -23,10 +23,10 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "release": "npm run build && npm publish --registry=https://devwh.sinoccdc.com:8086/npm/"
+    "release": "npm run build && npm publish --registry=https://devwh.ccdc.com:8086/npm/"
   },
   "publishConfig": {
-    "registry": "https://devwh.sinoccdc.com:8086/npm/"
+    "registry": "https://devwh.ccdc.com:8086/npm/"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
