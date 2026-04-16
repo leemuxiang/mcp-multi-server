@@ -112,6 +112,7 @@
 ### 5.2 快速开始
 1. 安装依赖：`npm install`
 2. 启动开发环境：`npm run dev` (同时启动前端 UI 和 HTTP MCP 服务)
+   - *注：项目已集成 `cross-env`，支持 Windows、macOS 和 Linux。*
 3. 访问：`http://localhost:3000`
 
 ### 5.3 核心文件说明
@@ -136,6 +137,8 @@
 ## 7. 编译与部署
 
 ### 7.1 三种编译目标
+项目已集成 `rimraf` 和 `shx`，确保编译脚本在 Windows、macOS 和 Linux 上均可运行。
+
 1. **Web SPA**: `npm run build:web` -> `dist/`。
 2. **Stdio NPM 包**: `npm run build:stdio` -> `dist/mcp-stdio.js`。
 3. **HTTP Server**: `npm run build:server` -> `dist/mcp-server-http.js` (单文件打包)。

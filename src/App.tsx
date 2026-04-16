@@ -31,18 +31,52 @@ export default function App() {
   }, null, 2));
   const [rawResponse, setRawResponse] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<"todos" | "tools" | "console">("todos");
+  const [initialized, setInitialized] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Fetch initial data
   useEffect(() => {
-    fetchTools();
-    fetchTodos();
+    const init = async () => {
+      setLoading(true);
+      // 1. Initialize MCP
+      const initData = await mcpRequest("initialize", {
+        protocolVersion: "2025-03-26",
+        capabilities: {},
+        clientInfo: { name: "mcp-test-client", version: "1.0.0" }
+      });
+      
+      if (initData.error) {
+        console.error("Initialization failed:", initData.error);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Send initialized notification
+      await mcpRequest("notifications/initialized");
+      
+      setInitialized(true);
+      await fetchTools();
+      await fetchTodos();
+      setLoading(false);
+    };
+    init();
   }, []);
 
   const mcpRequest = async (method: string, params: any = {}) => {
     try {
+      const headers: Record<string, string> = { 
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "mcp-protocol-version": "2025-03-26"
+      };
+
+      if (sessionId) {
+        headers["mcp-session-id"] = sessionId;
+      }
+
       const response = await fetch("/mcp", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           jsonrpc: "2.0",
           id: Date.now(),
@@ -50,8 +84,23 @@ export default function App() {
           params
         })
       });
-      const data = await response.json();
-      return data;
+      
+      // Update session ID if provided in response headers
+      const newSessionId = response.headers.get("mcp-session-id");
+      if (newSessionId && newSessionId !== sessionId) {
+        console.log("New MCP Session ID:", newSessionId);
+        setSessionId(newSessionId);
+      }
+
+      const text = await response.text();
+      if (!text) return {};
+      
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        console.error("Failed to parse JSON:", text);
+        return { error: { message: "Invalid JSON response", raw: text } };
+      }
     } catch (error) {
       console.error("MCP Request failed:", error);
       return { error: { message: "Network error" } };
@@ -93,13 +142,38 @@ export default function App() {
   const handleSendRaw = async () => {
     setLoading(true);
     try {
+      const headers: Record<string, string> = { 
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "mcp-protocol-version": "2025-03-26"
+      };
+
+      if (sessionId) {
+        headers["mcp-session-id"] = sessionId;
+      }
+
       const response = await fetch("/mcp", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: rawRequest
       });
-      const data = await response.json();
-      setRawResponse(data);
+
+      // Update session ID if provided in response headers
+      const newSessionId = response.headers.get("mcp-session-id");
+      if (newSessionId && newSessionId !== sessionId) {
+        setSessionId(newSessionId);
+      }
+
+      const text = await response.text();
+      if (!text) {
+        setRawResponse({ status: response.status, message: "Empty response" });
+      } else {
+        try {
+          setRawResponse(JSON.parse(text));
+        } catch (e) {
+          setRawResponse({ status: response.status, raw: text });
+        }
+      }
     } catch (error: any) {
       setRawResponse({ error: error.message });
     }

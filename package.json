@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "mcp-multi-server",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,19 +10,21 @@
     "dist"
   ],
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "cross-env NODE_ENV=development tsx server.ts",
     "start:http": "tsx server.ts",
     "start:stdio": "tsx src/mcp-server.ts --stdio",
     "build": "npm run clean && npm run build:web && npm run build:stdio && npm run build:server && npm run build:assets",
     "build:web": "vite build",
-    "build:stdio": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-stdio.js --banner:js=\"#!/usr/bin/env node\" && chmod +x dist/mcp-stdio.js",
+    "build:stdio": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-stdio.js --banner:js=\"#!/usr/bin/env node\" && shx chmod +x dist/mcp-stdio.js",
     "build:server": "esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-server-http.js --external:vite",
-    "build:assets": "cp SKILL.md dist/",
+    "build:assets": "shx cp SKILL.md dist/",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
+    "clean": "rimraf dist",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "inspect:stdio": "npx @modelcontextprotocol/inspector node ./dist/mcp-stdio.js --stdio",
+    "inspect:mcp": "npx @modelcontextprotocol/inspector node ./dist/mcp-server-http.js",
     "release": "npm run build && npm publish --registry=https://devwh.ccdc.com:8086/npm/"
   },
   "publishConfig": {
@@ -48,7 +50,10 @@
     "@types/node": "^22.14.0",
     "@vitest/ui": "^4.1.4",
     "autoprefixer": "^10.4.21",
+    "cross-env": "^10.1.0",
     "esbuild": "^0.28.0",
+    "rimraf": "^6.1.3",
+    "shx": "^0.4.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

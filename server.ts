@@ -2,9 +2,10 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { server } from "./src/mcp-server.js";
-import { JSONRPCRequest } from "@modelcontextprotocol/sdk/types.js";
+import { randomUUID } from "node:crypto";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createMcpServer } from "./src/mcp-server.js";
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -16,57 +17,97 @@ async function startServer() {
   app.use(express.json());
 
   /**
-   * 1. Streamable HTTP Endpoint (2025-03-26 Spec)
-   * 适合现代、高性能的 MCP 客户端
+   * Map to store transports by session ID.
+   * This ensures each client has its own isolated MCP server instance.
+   */
+  const transports: Record<string, StreamableHTTPServerTransport> = {};
+
+  /**
+   * 1. MCP Endpoint (POST)
+   * Handles JSON-RPC messages from clients.
+   * Implements the session-based pattern from the SDK examples.
    */
   app.post("/mcp", async (req, res) => {
-    const request = req.body as JSONRPCRequest;
-    if (!request || typeof request !== "object" || !request.method) {
-      return res.status(400).json({ jsonrpc: "2.0", error: { code: -32600, message: "Invalid Request" }, id: request?.id || null });
-    }
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    
     try {
-      // @ts-ignore - handleRequest is the internal entry point for JSON-RPC
-      const response = await server.server.handleRequest(request);
-      res.json(response);
+      let transport: StreamableHTTPServerTransport;
+
+      if (sessionId && transports[sessionId]) {
+        // Reuse existing transport for this session
+        transport = transports[sessionId];
+      } else if (!sessionId && isInitializeRequest(req.body)) {
+        // New initialization request - create a new session
+        console.log("[MCP] Creating new session...");
+        
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          enableJsonResponse: true,
+          onsessioninitialized: (newSessionId) => {
+            console.log(`[MCP] Session initialized: ${newSessionId}`);
+            transports[newSessionId] = transport;
+          }
+        });
+
+        // Create a dedicated server instance for this session
+        const sessionServer = createMcpServer();
+        await sessionServer.connect(transport);
+        
+        // Handle the initialization request
+        await transport.handleRequest(req, res, req.body);
+        return;
+      } else {
+        // Invalid request: no session ID and not an initialization request
+        console.warn("[MCP] Bad request: No session ID and not initialization", req.body);
+        res.status(400).json({
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "Bad Request: No valid session ID provided" },
+          id: req.body?.id || null
+        });
+        return;
+      }
+
+      // Handle subsequent requests with the existing transport
+      await transport.handleRequest(req, res, req.body);
     } catch (error: any) {
-      res.status(500).json({ jsonrpc: "2.0", error: { code: error.code || -32603, message: error.message || "Internal error" }, id: request.id || null });
+      console.error("[MCP POST] Error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          jsonrpc: "2.0", 
+          error: { code: -32603, message: error.message || "Internal error" }, 
+          id: req.body?.id || null 
+        });
+      }
     }
   });
 
   /**
-   * 2. SSE Transport (Standard HTTP)
-   * 兼容目前主流的 MCP 客户端（如 Claude Desktop, Cursor）
+   * 2. SSE Endpoint (GET)
+   * Optional: Kept for compatibility with clients that prefer SSE.
    */
-  const sseSessions = new Map<string, SSEServerTransport>();
-
   app.get("/sse", async (req, res) => {
-    const sessionId = Math.random().toString(36).substring(2, 15);
-    console.log(`New SSE connection: ${sessionId}`);
-    
-    const transport = new SSEServerTransport(`/messages/${sessionId}`, res);
-    sseSessions.set(sessionId, transport);
-    
-    await server.connect(transport);
-    
-    req.on("close", () => {
-      console.log(`SSE connection closed: ${sessionId}`);
-      sseSessions.delete(sessionId);
-    });
-  });
-
-  app.post("/messages/:sessionId", async (req, res) => {
-    const { sessionId } = req.params;
-    const transport = sseSessions.get(sessionId);
-    
-    if (transport) {
-      await transport.handlePostMessage(req, res);
-    } else {
-      res.status(404).send("Session not found");
+    try {
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+      });
+      const sessionServer = createMcpServer();
+      await sessionServer.connect(transport);
+      await transport.handleRequest(req, res);
+    } catch (error: any) {
+      console.error("[MCP SSE] Error:", error);
+      if (!res.headersSent) {
+        res.status(500).send("SSE Connection Error");
+      }
     }
   });
 
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", protocol: "mcp", version: "2025-03-26", transports: ["streamable-http", "sse"] });
+    res.json({ 
+      status: "ok", 
+      protocol: "mcp", 
+      version: "2025-03-26", 
+      activeSessions: Object.keys(transports).length
+    });
   });
 
   // Vite middleware for development
@@ -86,8 +127,8 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-    console.log(`MCP Endpoint: http://0.0.0.0:${PORT}/mcp`);
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`MCP Endpoint: http://localhost:${PORT}/mcp`);
   });
 }
 
