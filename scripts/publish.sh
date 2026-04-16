@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 设置私有仓库地址
-REGISTRY="https://devwh.sinoccdc.com:8086/npm/"
+REGISTRY="https://devwh.ccdc.com:8086/npm/"
 
 echo "开始全量编译项目 (Web, Stdio, HTTP Server)..."
 npm run build
