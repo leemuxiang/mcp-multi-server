@@ -1,0 +1,6 @@
+{
+  "name": "mcp-server",
+  "description": "A Model Context Protocol (MCP) server example with TodoList tools, supporting both Stdio and Streamable HTTP (2025-03-26) transports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
